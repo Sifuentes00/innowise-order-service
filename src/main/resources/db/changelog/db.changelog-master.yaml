@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/001-create-items-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/002-create-orders-table.sql
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/003-create-order-items-table.sql
+      relativeToChangelogFile: false
