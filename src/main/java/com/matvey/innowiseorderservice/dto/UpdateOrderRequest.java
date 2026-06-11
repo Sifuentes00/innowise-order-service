@@ -1,36 +1,26 @@
 package com.matvey.innowiseorderservice.dto;
 
 import com.matvey.innowiseorderservice.enums.OrderStatus;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class OrderDto implements Serializable {
-
-    private UUID id;
-
-    private UUID userId;
-
-    private String email;
+public class UpdateOrderRequest implements Serializable {
 
     private OrderStatus status;
 
+    @Min(value = 0, message = "Total price cannot be negative")
     private BigDecimal totalPrice;
 
-    private Boolean deleted;
-
-    private LocalDateTime createdAt;
-
-    private LocalDateTime updatedAt;
-
-    private List<OrderItemDto> orderItems;
+    @Valid
+    private List<UpdateOrderItemRequest> items;
 }

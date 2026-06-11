@@ -1,12 +1,21 @@
 package com.matvey.innowiseorderservice.service;
 
+import com.matvey.innowiseorderservice.client.UserClient;
+import com.matvey.innowiseorderservice.dto.CreateOrderItemRequest;
+import com.matvey.innowiseorderservice.dto.CreateOrderRequest;
 import com.matvey.innowiseorderservice.dto.OrderDto;
 import com.matvey.innowiseorderservice.dto.OrderItemDto;
+import com.matvey.innowiseorderservice.dto.OrderWithUserDto;
+import com.matvey.innowiseorderservice.dto.UpdateOrderItemRequest;
+import com.matvey.innowiseorderservice.dto.UpdateOrderRequest;
+import com.matvey.innowiseorderservice.dto.UserDto;
+import com.matvey.innowiseorderservice.entity.Item;
 import com.matvey.innowiseorderservice.entity.Order;
 import com.matvey.innowiseorderservice.entity.OrderItem;
 import com.matvey.innowiseorderservice.enums.OrderStatus;
 import com.matvey.innowiseorderservice.mapper.OrderItemMapper;
 import com.matvey.innowiseorderservice.mapper.OrderMapper;
+import com.matvey.innowiseorderservice.repository.ItemRepository;
 import com.matvey.innowiseorderservice.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -17,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import static com.matvey.innowiseorderservice.specification.OrderSpecification.byCreatedAtBetween;
 import static com.matvey.innowiseorderservice.specification.OrderSpecification.byDeletedFalse;
@@ -31,31 +39,51 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
+    private final UserClient userClient;
+    private final ItemRepository itemRepository;
 
-    public OrderDto create(OrderDto orderDto) {
-        Order order = orderMapper.toEntity(orderDto);
-        order.setDeleted(false);
-        if (order.getStatus() == null) {
-            order.setStatus(OrderStatus.PENDING);
+    @Transactional
+    public OrderWithUserDto create(CreateOrderRequest createOrderRequest) {
+        UserDto userDto = userClient.getUserByEmail(createOrderRequest.getEmail());
+        if (userDto == null) {
+            throw new RuntimeException("User not found with email: " + createOrderRequest.getEmail());
+        }
+        if (Boolean.FALSE.equals(userDto.getActive())) {
+            throw new RuntimeException("User is not active: " + createOrderRequest.getEmail());
         }
 
-        if (order.getOrderItems() != null) {
-            for (OrderItem orderItem : order.getOrderItems()) {
+        Order order = new Order();
+        order.setUserId(userDto.getUserId());
+        order.setEmail(createOrderRequest.getEmail());
+        order.setStatus(OrderStatus.PENDING);
+        order.setDeleted(false);
+
+        if (createOrderRequest.getItems() != null) {
+            for (CreateOrderItemRequest itemRequest : createOrderRequest.getItems()) {
+                if (!itemRepository.existsById(itemRequest.getItemId())) {
+                    throw new RuntimeException("Item not found with id: " + itemRequest.getItemId());
+                }
+                OrderItem orderItem = new OrderItem();
+                Item item = new Item();
+                item.setId(itemRequest.getItemId());
+                orderItem.setItem(item);
+                orderItem.setQuantity(itemRequest.getQuantity());
                 orderItem.setOrder(order);
+                order.getOrderItems().add(orderItem);
             }
         }
 
         Order savedOrder = orderRepository.save(order);
-        return orderMapper.toDtoWithItems(savedOrder, orderItemMapper);
+        return orderMapper.toOrderWithUserDto(savedOrder, orderItemMapper, userClient);
     }
 
-    public OrderDto getById(UUID id) {
+    public OrderWithUserDto getById(UUID id) {
         Order order = orderRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new RuntimeException("Order not found with id: " + id));
-        return orderMapper.toDtoWithItems(order, orderItemMapper);
+        return orderMapper.toOrderWithUserDto(order, orderItemMapper, userClient);
     }
 
-    public Page<OrderDto> getAll(UUID userId, List<OrderStatus> statuses, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, Pageable pageable) {
+    public Page<OrderWithUserDto> getAll(UUID userId, List<OrderStatus> statuses, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, Pageable pageable) {
         Specification<Order> spec = Specification.where(byDeletedFalse());
 
         if (userId != null) {
@@ -69,34 +97,61 @@ public class OrderService {
         }
 
         Page<Order> orderPage = orderRepository.findAll(spec, pageable);
-        return orderPage.map(order -> orderMapper.toDtoWithItems(order, orderItemMapper));
+        return orderPage.map(order -> orderMapper.toOrderWithUserDto(order, orderItemMapper, userClient));
     }
 
-    public List<OrderDto> getByUserId(UUID userId) {
+    public List<OrderWithUserDto> getByUserId(UUID userId) {
         List<Order> orders = orderRepository.findByUserIdAndDeletedFalse(userId);
         return orders.stream()
-                .map(order -> orderMapper.toDtoWithItems(order, orderItemMapper))
-                .collect(Collectors.toList());
+                .map(order -> orderMapper.toOrderWithUserDto(order, orderItemMapper, userClient))
+                .toList();
     }
 
     @Transactional
-    public OrderDto update(UUID id, OrderDto orderDto) {
+    public OrderWithUserDto update(UUID id, UpdateOrderRequest updateOrderRequest) {
         Order existingOrder = orderRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new RuntimeException("Order not found with id: " + id));
 
-        orderMapper.updateEntityFromDto(orderDto, existingOrder);
+        if (updateOrderRequest.getStatus() != null) {
+            existingOrder.setStatus(updateOrderRequest.getStatus());
+        }
+        if (updateOrderRequest.getTotalPrice() != null) {
+            existingOrder.setTotalPrice(updateOrderRequest.getTotalPrice());
+        }
 
-        if (orderDto.getOrderItems() != null) {
-            existingOrder.getOrderItems().clear();
-            for (OrderItemDto orderItemDto : orderDto.getOrderItems()) {
-                OrderItem orderItem = new OrderItem();
-                orderItem.setOrder(existingOrder);
-                existingOrder.getOrderItems().add(orderItem);
+        if (updateOrderRequest.getItems() != null) {
+            existingOrder.getOrderItems().removeIf(orderItem -> {
+                UUID itemId = orderItem.getItem().getId();
+                return updateOrderRequest.getItems().stream()
+                        .noneMatch(req -> req.getItemId().equals(itemId));
+            });
+
+            for (UpdateOrderItemRequest itemRequest : updateOrderRequest.getItems()) {
+                if (!itemRepository.existsById(itemRequest.getItemId())) {
+                    throw new RuntimeException("Item not found with id: " + itemRequest.getItemId());
+                }
+
+                OrderItem existingOrderItem = existingOrder.getOrderItems().stream()
+                        .filter(oi -> oi.getItem().getId().equals(itemRequest.getItemId()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (existingOrderItem != null) {
+                    existingOrderItem.setQuantity(itemRequest.getQuantity());
+                } else {
+                    OrderItem newOrderItem = new OrderItem();
+                    Item item = new Item();
+                    item.setId(itemRequest.getItemId());
+                    newOrderItem.setItem(item);
+                    newOrderItem.setQuantity(itemRequest.getQuantity());
+                    newOrderItem.setOrder(existingOrder);
+                    existingOrder.getOrderItems().add(newOrderItem);
+                }
             }
         }
 
         Order updatedOrder = orderRepository.save(existingOrder);
-        return orderMapper.toDtoWithItems(updatedOrder, orderItemMapper);
+        return orderMapper.toOrderWithUserDto(updatedOrder, orderItemMapper, userClient);
     }
 
     @Transactional

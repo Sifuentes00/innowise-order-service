@@ -14,7 +14,7 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class OrderDto implements Serializable {
+public class OrderWithUserDto implements Serializable {
 
     private UUID id;
 
@@ -33,4 +33,6 @@ public class OrderDto implements Serializable {
     private LocalDateTime updatedAt;
 
     private List<OrderItemDto> orderItems;
+
+    private UserDto user;
 }

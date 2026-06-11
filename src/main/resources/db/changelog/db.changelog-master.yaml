@@ -8,3 +8,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/003-create-order-items-table.sql
       relativeToChangelogFile: false
+  - include:
+      file: db/changelog/004-add-email-to-orders.sql
+      relativeToChangelogFile: false
