@@ -15,6 +15,10 @@ import com.matvey.innowiseorderservice.entity.OrderItem;
 import com.matvey.innowiseorderservice.enums.OrderStatus;
 import com.matvey.innowiseorderservice.mapper.OrderItemMapper;
 import com.matvey.innowiseorderservice.mapper.OrderMapper;
+import com.matvey.innowiseorderservice.exception.ItemNotFoundException;
+import com.matvey.innowiseorderservice.exception.OrderNotFoundException;
+import com.matvey.innowiseorderservice.exception.UserNotActiveException;
+import com.matvey.innowiseorderservice.exception.UserNotFoundException;
 import com.matvey.innowiseorderservice.repository.ItemRepository;
 import com.matvey.innowiseorderservice.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -157,7 +161,7 @@ public class OrderService {
     @Transactional
     public void softDelete(UUID id) {
         Order order = orderRepository.findByIdAndDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("Order not found with id: " + id));
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
         order.setDeleted(true);
         orderRepository.save(order);
     }
