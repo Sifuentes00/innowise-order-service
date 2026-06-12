@@ -1,0 +1,66 @@
+name: Continuous Integration Pipeline
+
+on:
+  push:
+    branches: [ dev, feature/* ]
+  pull_request:
+    branches: [ dev ]
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_OPTS: -Xmx3072m
+
+jobs:
+  ci-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Verify Java installation
+        run: |
+          echo "Java version:"
+          java -version
+          echo "Maven version:"
+          mvn -version
+
+      - name: Compile source code
+        run: mvn clean compile
+
+      - name: Execute test suite
+        run: mvn test
+
+      - name: Perform code quality analysis
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/')
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: mvn verify sonar:sonar -Dsonar.projectKey=Sifuentes00_innowise-order-service -Dsonar.organization=sifuentes00 -Dsonar.host.url=https://sonarcloud.io -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+
+      - name: Build application JAR
+        run: mvn package -DskipTests
+
+      - name: Construct Docker image
+        run: |
+          IMAGE_NAME=innowise-order-service
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
+
+      - name: Export Docker image artifact
+        run: docker save innowise-order-service:latest -o innowise-order-service.tar
+
+      - name: Archive Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-artifact
+          path: innowise-order-service.tar
+          retention-days: 7
