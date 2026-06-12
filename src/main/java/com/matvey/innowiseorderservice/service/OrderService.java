@@ -50,10 +50,10 @@ public class OrderService {
     public OrderWithUserDto create(CreateOrderRequest createOrderRequest) {
         UserDto userDto = userClient.getUserByEmail(createOrderRequest.getEmail());
         if (userDto == null) {
-            throw new RuntimeException("User not found with email: " + createOrderRequest.getEmail());
+            throw new UserNotFoundException("User not found with email: " + createOrderRequest.getEmail());
         }
         if (Boolean.FALSE.equals(userDto.getActive())) {
-            throw new RuntimeException("User is not active: " + createOrderRequest.getEmail());
+            throw new UserNotActiveException("User is not active: " + createOrderRequest.getEmail());
         }
 
         Order order = new Order();
@@ -61,15 +61,13 @@ public class OrderService {
         order.setEmail(createOrderRequest.getEmail());
         order.setStatus(OrderStatus.PENDING);
         order.setDeleted(false);
+        order.setTotalPrice(createOrderRequest.getTotalPrice());
 
         if (createOrderRequest.getItems() != null) {
             for (CreateOrderItemRequest itemRequest : createOrderRequest.getItems()) {
-                if (!itemRepository.existsById(itemRequest.getItemId())) {
-                    throw new RuntimeException("Item not found with id: " + itemRequest.getItemId());
-                }
+                Item item = itemRepository.findById(itemRequest.getItemId())
+                        .orElseThrow(() -> new ItemNotFoundException("Item not found with id: " + itemRequest.getItemId()));
                 OrderItem orderItem = new OrderItem();
-                Item item = new Item();
-                item.setId(itemRequest.getItemId());
                 orderItem.setItem(item);
                 orderItem.setQuantity(itemRequest.getQuantity());
                 orderItem.setOrder(order);
@@ -82,8 +80,8 @@ public class OrderService {
     }
 
     public OrderWithUserDto getById(UUID id) {
-        Order order = orderRepository.findByIdAndDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("Order not found with id: " + id));
+        Order order = orderRepository.findByIdWithItemsAndDeletedFalse(id)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
         return orderMapper.toOrderWithUserDto(order, orderItemMapper, userClient);
     }
 
@@ -113,8 +111,8 @@ public class OrderService {
 
     @Transactional
     public OrderWithUserDto update(UUID id, UpdateOrderRequest updateOrderRequest) {
-        Order existingOrder = orderRepository.findByIdAndDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("Order not found with id: " + id));
+        Order existingOrder = orderRepository.findByIdWithItemsAndDeletedFalse(id)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
 
         if (updateOrderRequest.getStatus() != null) {
             existingOrder.setStatus(updateOrderRequest.getStatus());
@@ -131,9 +129,8 @@ public class OrderService {
             });
 
             for (UpdateOrderItemRequest itemRequest : updateOrderRequest.getItems()) {
-                if (!itemRepository.existsById(itemRequest.getItemId())) {
-                    throw new RuntimeException("Item not found with id: " + itemRequest.getItemId());
-                }
+                Item item = itemRepository.findById(itemRequest.getItemId())
+                        .orElseThrow(() -> new ItemNotFoundException("Item not found with id: " + itemRequest.getItemId()));
 
                 OrderItem existingOrderItem = existingOrder.getOrderItems().stream()
                         .filter(oi -> oi.getItem().getId().equals(itemRequest.getItemId()))
@@ -144,8 +141,6 @@ public class OrderService {
                     existingOrderItem.setQuantity(itemRequest.getQuantity());
                 } else {
                     OrderItem newOrderItem = new OrderItem();
-                    Item item = new Item();
-                    item.setId(itemRequest.getItemId());
                     newOrderItem.setItem(item);
                     newOrderItem.setQuantity(itemRequest.getQuantity());
                     newOrderItem.setOrder(existingOrder);
@@ -160,7 +155,7 @@ public class OrderService {
 
     @Transactional
     public void softDelete(UUID id) {
-        Order order = orderRepository.findByIdAndDeletedFalse(id)
+        Order order = orderRepository.findByIdWithItemsAndDeletedFalse(id)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
         order.setDeleted(true);
         orderRepository.save(order);

@@ -2,6 +2,7 @@ package com.matvey.innowiseorderservice.service;
 
 import com.matvey.innowiseorderservice.dto.ItemDto;
 import com.matvey.innowiseorderservice.entity.Item;
+import com.matvey.innowiseorderservice.exception.ItemNotFoundException;
 import com.matvey.innowiseorderservice.mapper.ItemMapper;
 import com.matvey.innowiseorderservice.repository.ItemRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,7 @@ public class ItemService {
 
     public ItemDto getById(UUID id) {
         Item item = itemRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Item not found with id: " + id));
+                .orElseThrow(() -> new ItemNotFoundException("Item not found with id: " + id));
         return itemMapper.toDto(item);
     }
 
@@ -41,7 +42,7 @@ public class ItemService {
     @Transactional
     public ItemDto update(UUID id, ItemDto itemDto) {
         Item existingItem = itemRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Item not found with id: " + id));
+                .orElseThrow(() -> new ItemNotFoundException("Item not found with id: " + id));
         itemMapper.updateEntityFromDto(itemDto, existingItem);
         Item updatedItem = itemRepository.save(existingItem);
         return itemMapper.toDto(updatedItem);
